@@ -54,6 +54,17 @@ impl Default for Race {
 	}
 }
 
+impl std::fmt::Display for Race {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Self::Random => write!(f, "Random"),
+			Self::Terran => write!(f, "Terran"),
+			Self::Protoss => write!(f, "Protoss"),
+			Self::Zerg => write!(f, "Zerg"),
+		}
+	}
+}
+
 /// Difficulty of in-game AI.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, Copy, Clone, FromPrimitive, FromStr)]
@@ -99,6 +110,23 @@ impl IntoProto<ProtoDifficulty> for Difficulty {
 			Difficulty::CheatVision => ProtoDifficulty::CheatVision,
 			Difficulty::CheatMoney => ProtoDifficulty::CheatMoney,
 			Difficulty::CheatInsane => ProtoDifficulty::CheatInsane,
+		}
+	}
+}
+
+impl std::fmt::Display for Difficulty {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Difficulty::VeryEasy => write!(f, "VeryEasy"),
+			Difficulty::Easy => write!(f, "Easy"),
+			Difficulty::Medium => write!(f, "Medium"),
+			Difficulty::MediumHard => write!(f, "MediumHard"),
+			Difficulty::Hard => write!(f, "Hard"),
+			Difficulty::Harder => write!(f, "Harder"),
+			Difficulty::VeryHard => write!(f, "VeryHard"),
+			Difficulty::CheatVision => write!(f, "CheatVision"),
+			Difficulty::CheatMoney => write!(f, "CheatMoney"),
+			Difficulty::CheatInsane => write!(f, "CheatInsane"),
 		}
 	}
 }

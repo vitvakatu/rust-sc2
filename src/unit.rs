@@ -1618,7 +1618,7 @@ impl Unit {
 		self.command(
 			self.data.game_data.units[&self.data.race_values.gas]
 				.ability
-				.unwrap(),
+				.unwrap_or(AbilityId::ZergBuildExtractor),
 			Target::Tag(target),
 			queue,
 		)

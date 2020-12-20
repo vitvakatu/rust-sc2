@@ -82,7 +82,7 @@ const SC2_SUPPORT: &str = {
 /// Runner for games vs built-in AI.
 pub struct RunnerSingle<'a, B>
 where
-	B: Player + DerefMut<Target = Bot> + Deref<Target = Bot>,
+	B: Player
 {
 	bot: &'a mut B,
 	sc2_path: String,
@@ -98,7 +98,7 @@ where
 
 impl<'a, B> RunnerSingle<'a, B>
 where
-	B: Player + DerefMut<Target = Bot> + Deref<Target = Bot>,
+	B: Player
 {
 	/// Constructs new single player runner.
 	pub fn new(bot: &'a mut B, computer: Computer, map: &str, sc2_version: Option<&'a str>) -> Self {
@@ -121,16 +121,17 @@ where
 	pub fn launch(&mut self) -> SC2Result<()> {
 		let port = get_unused_port();
 		debug!("Launching SC2 process");
-		self.bot.process = Some(launch_client(&self.sc2_path, port, self.sc2_version)?);
+		self.bot.bot().borrow_mut().process = Some(launch_client(&self.sc2_path, port, self.sc2_version)?);
 		debug!("Connecting to websocket");
-		self.bot.api = Some(API(connect_to_websocket(HOST, port)?));
+		self.bot.bot().borrow_mut().api = Some(API(connect_to_websocket(HOST, port)?));
 		Ok(())
 	}
 
 	/// Runs requested game.
 	pub fn run_game(&mut self) -> SC2Result<()> {
 		let settings = self.bot.get_player_settings();
-		let api = &mut self.bot.api.as_mut().unwrap();
+		let bot = self.bot.bot();
+		let mut borrowed_bot = bot.borrow_mut();
 
 		debug!("Sending CreateGame request");
 		let mut req = Request::new();
@@ -144,7 +145,7 @@ where
 
 		req_create_game.set_realtime(self.realtime);
 
-		let res = api.send(req)?;
+		let res = borrowed_bot.api().send(req)?;
 		let res_create_game = res.get_create_game();
 		if res_create_game.has_error() {
 			let err = format!(
@@ -157,20 +158,21 @@ where
 		}
 
 		debug!("Sending JoinGame request");
-		self.bot.player_id = join_game(&settings, api, None)?;
+		borrowed_bot.player_id = join_game(&settings, borrowed_bot.api(), None)?;
 
-		set_static_data(self.bot)?;
+		set_static_data(borrowed_bot.deref_mut())?;
 
 		debug!("Entered main loop");
+		drop(borrowed_bot);
 		play_first_step(self.bot, self.realtime)?;
 		let mut iteration = 0;
 		while play_step(self.bot, iteration, self.realtime)? {
 			iteration += 1;
 		}
-		debug!("Game finished");
+		info!("Game finished!");
 
 		if let Some(path) = &self.save_replay_as {
-			save_replay(self.bot.api(), &path)?;
+			save_replay(bot.borrow_mut().api(), &path)?;
 		}
 		Ok(())
 	}
@@ -185,7 +187,7 @@ where
 
 	/// Manually closes SC2 client.
 	pub fn close(&mut self) {
-		self.bot.close_client();
+		self.bot.bot().borrow_mut().close_client();
 	}
 }
 
@@ -402,7 +404,7 @@ pub fn run_vs_computer<B>(
 	options: LaunchOptions,
 ) -> SC2Result<()>
 where
-	B: Player + DerefMut<Target = Bot> + Deref<Target = Bot>,
+	B: Player
 {
 	let mut runner = RunnerSingle::new(bot, computer, map_name, options.sc2_version);
 	runner.launch()?;
@@ -421,30 +423,31 @@ pub fn run_ladder_game<B>(
 	opponent_id: Option<&str>,
 ) -> SC2Result<()>
 where
-	B: Player + DerefMut<Target = Bot> + Deref<Target = Bot>,
+	B: Player
 {
 	debug!("Starting ladder game");
 
 	debug!("Connecting to websocket");
-	bot.api = Some(API(connect_to_websocket(&host, port.parse()?)?));
+	bot.bot().borrow_mut().api = Some(API(connect_to_websocket(&host, port.parse()?)?));
 
 	debug!("Sending JoinGame request");
 
 	if let Some(id) = opponent_id {
-		bot.opponent_id = id.to_string();
+		bot.bot().borrow_mut().opponent_id = id.to_string();
 	}
 
-	bot.player_id = join_game(
+	let player_id = join_game(
 		&bot.get_player_settings(),
-		bot.api(),
+		bot.bot().borrow_mut().api(),
 		Some(&Ports {
 			// shared: player_port + 1,
 			server: (player_port + 2, player_port + 3),
 			client: vec![(player_port + 4, player_port + 5)],
 		}),
 	)?;
+	bot.bot().borrow_mut().player_id = player_id;
 
-	set_static_data(bot)?;
+	set_static_data(&mut bot.bot().borrow_mut())?;
 
 	debug!("Entered main loop");
 	// Main loop
@@ -600,44 +603,46 @@ fn wait_join(api: &mut API) -> SC2Result<u32> {
 
 fn play_first_step<B>(bot: &mut B, realtime: bool) -> SC2Result<()>
 where
-	B: Player + DerefMut<Target = Bot> + Deref<Target = Bot>,
+	B: Player
 {
 	let mut req = Request::new();
-	req.mut_observation().set_disable_fog(bot.disable_fog);
-	let res = bot.api().send(req)?;
+	req.mut_observation().set_disable_fog(bot.bot().borrow().disable_fog);
+	let res = bot.bot().borrow_mut().api().send(req)?;
 
-	bot.init_data_for_unit();
+	bot.bot().borrow_mut().init_data_for_unit();
 	update_state(bot, res.get_observation())?;
-	bot.prepare_start();
+	bot.bot().borrow_mut().prepare_start();
 
 	bot.on_start()?;
 
-	let bot_actions = bot.get_actions();
+	let bot = bot.bot();
+	let mut borrowed_bot = bot.borrow_mut();
+	let bot_actions = borrowed_bot.get_actions();
 	if !bot_actions.is_empty() {
 		let mut req = Request::new();
 		let actions = req.mut_action().mut_actions();
 		bot_actions.iter().for_each(|a| actions.push(a.into_proto()));
-		bot.clear_actions();
-		bot.api().send_request(req)?;
+		borrowed_bot.clear_actions();
+		borrowed_bot.api().send_request(req)?;
 	}
 	if !realtime {
 		let mut req = Request::new();
-		req.mut_step().set_count(bot.game_step.get_locked());
-		bot.api().send_request(req)?;
+		req.mut_step().set_count(borrowed_bot.game_step.get_locked());
+		borrowed_bot.api().send_request(req)?;
 	}
 	Ok(())
 }
 
 fn play_step<B>(bot: &mut B, iteration: usize, realtime: bool) -> SC2Result<bool>
 where
-	B: Player + DerefMut<Target = Bot> + Deref<Target = Bot>,
+	B: Player
 {
 	let mut req = Request::new();
-	req.mut_observation().set_disable_fog(bot.disable_fog);
-	let res = bot.api().send(req)?;
+	req.mut_observation().set_disable_fog(bot.bot().borrow().disable_fog);
+	let res = bot.bot().borrow_mut().api().send(req)?;
 
 	if matches!(res.get_status(), Status::ended) {
-		let result = res.get_observation().get_player_result()[bot.player_id as usize - 1]
+		let result = res.get_observation().get_player_result()[bot.bot().borrow().player_id as usize - 1]
 			.get_result()
 			.into_sc2();
 		debug!("Result for bot: {:?}", result);
@@ -646,18 +651,20 @@ where
 	}
 
 	update_state(bot, res.get_observation())?;
-	bot.prepare_step();
+	bot.bot().borrow_mut().prepare_step();
 
 	bot.on_step(iteration)?;
 
-	let bot_actions = bot.get_actions();
+	let bot = bot.bot();
+	let mut borrowed_bot = bot.borrow_mut();
+	let bot_actions = borrowed_bot.get_actions();
 	if !bot_actions.is_empty() {
 		// println!("{:?}: {:?}", iteration, bot_actions);
 		let mut req = Request::new();
 		let actions = req.mut_action().mut_actions();
 		bot_actions.iter().for_each(|a| actions.push(a.into_proto()));
-		bot.clear_actions();
-		bot.api().send_request(req)?;
+		borrowed_bot.clear_actions();
+		borrowed_bot.api().send_request(req)?;
 		/*
 		let res = api.send(req);
 		let results = res.get_action().get_result();
@@ -667,20 +674,20 @@ where
 		*/
 	}
 
-	let bot_debug_commands = bot.get_debug_commands();
+	let bot_debug_commands = borrowed_bot.get_debug_commands();
 	if !bot_debug_commands.is_empty() {
 		let mut req = Request::new();
 		let debug_commands = req.mut_debug().mut_debug();
 		bot_debug_commands
 			.iter()
 			.for_each(|cmd| debug_commands.push(cmd.into_proto()));
-		bot.clear_debug_commands();
-		bot.api().send_request(req)?;
+			borrowed_bot.clear_debug_commands();
+			borrowed_bot.api().send_request(req)?;
 	}
 	if !realtime {
 		let mut req = Request::new();
-		req.mut_step().set_count(bot.game_step.get_locked());
-		bot.api().send_request(req)?;
+		req.mut_step().set_count(borrowed_bot.game_step.get_locked());
+		borrowed_bot.api().send_request(req)?;
 	}
 	Ok(true)
 }

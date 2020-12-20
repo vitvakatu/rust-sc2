@@ -519,11 +519,7 @@ impl Bot {
 	}
 	/// Returns correct cost of building given unit type.
 	pub fn get_unit_cost(&self, unit: UnitTypeId) -> Cost {
-		let mut cost = self
-			.game_data
-			.units
-			.get(&unit)
-			.map_or_else(Default::default, |data| data.cost());
+		let mut cost = self.get_unit_api_cost(unit);
 		match unit {
 			UnitTypeId::OrbitalCommand | UnitTypeId::PlanetaryFortress => {
 				cost.minerals = 150;
@@ -538,6 +534,68 @@ impl Bot {
 			}
 			UnitTypeId::Zergling => {
 				cost.minerals *= 2;
+			}
+			// Zerg buildings
+			UnitTypeId::Hatchery => {
+				cost.minerals = 300;
+			}
+			UnitTypeId::Extractor => {
+				cost.minerals = 75;
+			}
+			UnitTypeId::SpawningPool => {
+				cost.minerals = 200;
+			}
+			UnitTypeId::EvolutionChamber => {
+				cost.minerals = 75;
+			}
+			UnitTypeId::SpineCrawler => {
+				cost.minerals = 100;
+			}
+			UnitTypeId::SporeCrawler => {
+				cost.minerals = 75;
+			}
+			UnitTypeId::RoachWarren => {
+				cost.minerals = 150;
+			}
+			UnitTypeId::BanelingNest => {
+				cost.minerals = 100;
+				cost.vespene = 50;
+			}
+			UnitTypeId::Lair => {
+				cost.minerals = 150;
+				cost.vespene = 100;
+			}
+			UnitTypeId::HydraliskDen => {
+				cost.minerals = 100;
+				cost.vespene = 100;
+			}
+			UnitTypeId::LurkerDenMP => {
+				cost.minerals = 100;
+				cost.vespene = 150;
+			}
+			UnitTypeId::InfestationPit => {
+				cost.minerals = 100;
+				cost.vespene = 100;
+			}
+			UnitTypeId::Spire => {
+				cost.minerals = 200;
+				cost.vespene = 200;
+			}
+			UnitTypeId::NydusNetwork => {
+				cost.minerals = 150;
+				cost.vespene = 150;
+			}
+			UnitTypeId::Hive => {
+				cost.minerals = 200;
+				cost.vespene = 150;
+			}
+			UnitTypeId::UltraliskCavern => {
+				cost.minerals = 150;
+				cost.vespene = 200;
+			}
+			UnitTypeId::GreaterSpire => {
+				cost.minerals = 100;
+				cost.vespene = 150;
 			}
 			_ => {}
 		}

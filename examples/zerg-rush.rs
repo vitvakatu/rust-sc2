@@ -487,13 +487,7 @@ fn main() -> SC2Result<()> {
 				),
 				sub.value_of("map").unwrap_or_else(|| {
 					[
-						"AcropolisLE",
-						"DiscoBloodbathLE",
-						"EphemeronLE",
-						"ThunderbirdLE",
-						"TritonLE",
-						"WintersGateLE",
-						"WorldofSleepersLE",
+						"DeathAuraLE",
 					]
 					.choose(&mut rng)
 					.unwrap()

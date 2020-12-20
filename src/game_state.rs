@@ -38,10 +38,12 @@ pub struct GameState {
 
 pub(crate) fn update_state<B>(bot: &mut B, response_observation: &ResponseObservation) -> SC2Result<()>
 where
-	B: Player + DerefMut<Target = Bot> + Deref<Target = Bot>,
+	B: Player
 {
 	// Game state
-	let state = &mut bot.state;
+	let _bot = bot.bot();
+	let mut borrowed_bot = _bot.borrow_mut();
+	let state = &mut borrowed_bot.state;
 
 	// let player_result = response_observation.get_player_result();
 	state.actions = response_observation
@@ -158,16 +160,16 @@ where
 	}
 	#[cfg(not(feature = "enemies_cache"))]
 	for u in &dead_units {
-		if bot.owned_tags.remove(u) {
-			bot.under_construction.remove(u);
+		if borrowed_bot.owned_tags.remove(u) {
+			borrowed_bot.under_construction.remove(u);
 		} else {
-			bot.saved_hallucinations.remove(u);
+			borrowed_bot.saved_hallucinations.remove(u);
 		}
 
 		bot.on_event(Event::UnitDestroyed(*u))?;
 	}
 
-	let raw = &mut bot.state.observation.raw;
+	let raw = &mut borrowed_bot.state.observation.raw;
 	raw.dead_units = dead_units;
 
 	// Upgrades
@@ -193,8 +195,8 @@ where
 		}
 	});
 
-	let res = bot.api().send(req)?;
-	*bot.abilities_units.write_lock() = res
+	let res = borrowed_bot.api().send(req)?;
+	*borrowed_bot.abilities_units.write_lock() = res
 		.get_query()
 		.get_abilities()
 		.iter()
@@ -215,52 +217,58 @@ where
 	let units = res_raw
 		.get_units()
 		.iter()
-		.map(|u| Unit::from_proto(Rs::clone(&bot.data_for_unit), &visibility, u))
+		.map(|u| Unit::from_proto(Rs::clone(&borrowed_bot.data_for_unit), &visibility, u))
 		.collect::<Units>();
 
 	// Updating units
-	bot.update_units(units);
+	borrowed_bot.update_units(units);
 
 	// Events
 	let mut events = vec![];
 	let mut owned_tags = vec![];
 	let mut under_construction = vec![];
 	let mut construction_complete = vec![];
-	for (tag, u) in bot.units.my.all.pairs() {
-		if !bot.owned_tags.contains(tag) {
-			owned_tags.push(*tag);
+	let pairs = borrowed_bot.units.my.all.pairs().map(|(t, u)| (t.clone(), u.clone())).collect::<Vec<_>>();
+	for (tag, u) in pairs {
+		if !borrowed_bot.owned_tags.contains(&tag) {
+			owned_tags.push(tag);
 			if u.is_structure() {
 				if !(u.is_placeholder() || u.type_id == UnitTypeId::KD8Charge) {
 					if u.is_ready() {
-						events.push(Event::ConstructionComplete(*tag));
+						events.push(Event::ConstructionComplete(tag));
 					} else {
-						events.push(Event::ConstructionStarted(*tag));
-						under_construction.push(*tag);
+						events.push(Event::ConstructionStarted(tag));
+						under_construction.push(tag);
 					}
 				}
 			} else {
-				events.push(Event::UnitCreated(*tag));
+				events.push(Event::UnitCreated(tag));
 			}
-		} else if bot.under_construction.contains(tag) && u.is_ready() {
-			construction_complete.push(*tag);
-			events.push(Event::ConstructionComplete(*tag));
+		} else if borrowed_bot.under_construction.contains(&tag) && u.is_ready() {
+			construction_complete.push(tag);
+			events.push(Event::ConstructionComplete(tag));
 		}
 	}
+	drop(borrowed_bot);
 	for e in events {
 		bot.on_event(e)?;
 	}
+	let mut borrowed_bot = _bot.borrow_mut();
 	for tag in owned_tags {
-		bot.owned_tags.insert(tag);
+		borrowed_bot.owned_tags.insert(tag);
 	}
 	for tag in under_construction {
-		bot.under_construction.insert(tag);
+		borrowed_bot.under_construction.insert(tag);
 	}
 	for tag in construction_complete {
-		bot.under_construction.remove(&tag);
+		borrowed_bot.under_construction.remove(&tag);
 	}
 
-	if bot.enemy_race.is_random() {
-		if let Some(race) = bot
+	// Set visiblity
+	borrowed_bot.state.observation.raw.visibility = visibility;
+
+	if borrowed_bot.enemy_race.is_random() {
+		if let Some(race) = borrowed_bot
 			.units
 			.enemy
 			.all
@@ -268,13 +276,11 @@ where
 			.map(|u| u.race())
 			.find(|r| !r.is_random())
 		{
+			drop(borrowed_bot);
 			bot.on_event(Event::RandomRaceDetected(race))?;
-			bot.enemy_race = race;
+			_bot.borrow_mut().enemy_race = race;
 		}
 	}
-
-	// Set visiblity
-	bot.state.observation.raw.visibility = visibility;
 
 	Ok(())
 }

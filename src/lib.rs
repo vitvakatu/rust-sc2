@@ -315,7 +315,7 @@ Because of version differences ids are conditionally compiled for windows and li
 [b]: macro@bot
 */
 // #![warn(missing_docs)]
-#![deny(broken_intra_doc_links)]
+//#![deny(broken_intra_doc_links)]
 
 #[macro_use]
 extern crate num_derive;
@@ -329,6 +329,8 @@ extern crate itertools;
 extern crate maplit;
 #[macro_use]
 extern crate log;
+
+use std::{rc::Rc, cell::RefCell};
 
 /// The most frequent used items and various traits here.
 /// Prefered usage: `use::rust_sc2::prelude::*;`.
@@ -693,7 +695,9 @@ pub trait Player {
 	/// Called when different events happen.
 	fn on_event(&mut self, _event: Event) -> SC2Result<()> {
 		Ok(())
-	}
+    }
+    
+    fn bot(&self) -> Rc<RefCell<crate::bot::Bot>>;
 }
 
 trait FromProto<T>
